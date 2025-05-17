@@ -1,10 +1,52 @@
 // src/payment.controller.js
+
+const Razorpay = require('razorpay');
 const crypto = require('crypto');
 const kafka = require('./kafka');
 const userService = require('./user.service');
 require('dotenv').config();
 
-const RAZORPAY_WEBHOOK_SECRET = process.env.RAZORPAY_WEBHOOK_SECRET;
+const {
+    RAZORPAY_KEY_ID,
+    RAZORPAY_KEY_SECRET,
+    RAZORPAY_WEBHOOK_SECRET,
+} = process.env;
+
+// Initialize Razorpay client
+const razorpay = new Razorpay({
+    key_id: RAZORPAY_KEY_ID,
+    key_secret: RAZORPAY_KEY_SECRET,
+});
+
+
+async function initiatePayment(req, res) {
+    try {
+        const { amount, currency = 'INR', receipt, userId } = req.body;
+        if (!amount || !receipt || !userId) {
+            return res.status(400).json({ error: 'Missing required fields' });
+        }
+
+        // Create an Order in Razorpay
+        const options = {
+            amount: amount * 100,            // amount in smallest unit (paisa)
+            currency,
+            receipt,
+            notes: { user_id: userId },      // pass userId for later mapping
+        };
+        const order = await razorpay.orders.create(options);
+
+        return res.status(201).json({
+            orderId: order.id,
+            amount: order.amount,
+            currency: order.currency,
+            receipt: order.receipt,
+        });
+    } catch (err) {
+        console.error('❌ Error creating Razorpay order:', err);
+        return res.status(500).json({ error: 'Could not initiate payment' });
+    }
+}
+
 
 /**
  * Verify Razorpay webhook signature
@@ -62,4 +104,5 @@ const handleRazorpayWebhook = async (req, res) => {
 
 module.exports = {
     handleRazorpayWebhook,
+    initiatePayment,
 };
